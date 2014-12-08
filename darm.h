@@ -32,6 +32,14 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "armv7-tbl.h"
 
+#ifdef ANDROID
+#include <android/log.h>
+#define LOG_TAG "anemu"
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__))
+#define printf LOGI
+#endif
+#define lprintf(fd, ...) printf(__VA_ARGS__);
+
 #ifndef ARRAYSIZE
 #define ARRAYSIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #endif
@@ -264,7 +272,7 @@ const char *darm_condition_meaning_fp(darm_cond_t cond);
 darm_cond_t darm_condition_index(const char *condition_code);
 
 int darm_reglist(uint16_t reglist, char *out);
-void darm_dump(const darm_t *d);
+void darm_dump(const darm_t *d, int fd);
 
 int darm_str(const darm_t *d, darm_str_t *str);
 int darm_str2(const darm_t *d, darm_str_t *str, int lowercase);

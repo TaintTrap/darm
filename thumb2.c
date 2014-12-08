@@ -120,6 +120,7 @@ void thumb2_parse_reg(darm_t *d, uint16_t w, uint16_t w2)
 
     case T_THUMB2_RT_REG:
         d->Rt = (w2 >> 12) & b1111;
+        d->Rn = w & b1111;
         break;
 
     case T_THUMB2_RT_RT2_REG:

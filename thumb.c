@@ -285,6 +285,7 @@ static int thumb_disasm(darm_t *d, uint16_t w)
 
     case T_THUMB_PUSHPOP:
         d->reglist = w & BITMSK_8;
+        d->Rn = SP;
 
         // for push we have to set LR
         if(d->instr == I_PUSH) {

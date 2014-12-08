@@ -31,8 +31,22 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <ctype.h>
 #include <stdint.h>
 #include <string.h>
+#include <unistd.h>
 #include "darm.h"
 #include "darm-internal.h"
+#include <sys/uio.h>
+#include <errno.h>
+#include <assert.h>
+
+/*
+#define LOG_BUFFER_SIZE 256     // line size
+char log_buffer[LOG_BUFFER_SIZE];
+#define lprintf(out, ...) {                                             \
+        int _length = snprintf(log_buffer, sizeof(log_buffer), ##__VA_ARGS__); \
+        write(out, log_buffer, _length);                                \
+        fsync(out);                                                     \
+    }
+*/
 
 #define APPEND(out, ptr) \
     do { \
@@ -73,11 +87,20 @@ static int _append_imm(char *arg, uint32_t imm)
     return arg - start;
 }
 
+// inline
 void darm_init(darm_t *d)
 {
     // initialize the entire darm state in order to make sure that no members
     // contain undefined data
+
+    // TODO: avoid memset for performance
+#if 0
     memset(d, 0, sizeof(darm_t));
+#else
+    d->w = d->imm = d->rotate = d->lsb = d->msb = d->width = 0;
+    d->shift = d->reglist = d->sat_imm = 0;
+    d->cond = C_INVLD;
+#endif
     d->instr = I_INVLD;
     d->instr_type = T_INVLD;
     d->shift_type = S_INVLD;
@@ -91,6 +114,7 @@ void darm_init(darm_t *d)
     d->firstcond = C_INVLD, d->mask = 0;
 }
 
+// __attribute__((always_inline))
 int darm_disasm(darm_t *d, uint16_t w, uint16_t w2, uint32_t addr)
 {
     // if the least significant bit is not set, then this is
@@ -617,9 +641,49 @@ int darm_reglist(uint16_t reglist, char *out)
     return out - base;
 }
 
-void darm_dump(const darm_t *d)
+#include <stdarg.h>
+#include <unistd.h>
+#define LOG_BUF_SIZE 256
+#define LOG_HEADER_SIZE 24
+static
+int __log_print(int fd, const char *tag, const char *fmt, ...) {
+    va_list ap;
+    char buf[LOG_BUF_SIZE];
+
+    va_start(ap, fmt);
+    vsnprintf(buf, LOG_BUF_SIZE, fmt, ap);
+    va_end(ap);
+
+    char msg[LOG_HEADER_SIZE];
+    snprintf(msg, LOG_HEADER_SIZE, "%d %d ", getpid(), gettid());
+
+    // int fd = emu_global.trace_fd;
+
+    const int iovcnt = 2;
+    struct iovec vec[iovcnt];
+
+    vec[0].iov_base   = (void *) msg;
+    vec[0].iov_len    = strlen(msg);
+    vec[1].iov_base   = (void *) buf;
+    vec[1].iov_len    = strlen(buf);
+
+    ssize_t ret;
+
+    do {
+        ret = writev(fd, vec, iovcnt);
+    } while (ret < 0 && errno == EINTR);
+
+    assert(ret == (ssize_t)(vec[0].iov_len + vec[1].iov_len));
+
+    return ret;
+}
+
+// #define lprintf(fd, ...) __log_print(fd, "anemu", __VA_ARGS__)
+
+// TODO: avoid fprintf due to malloc and use snprintf instead
+void darm_dump(const darm_t *d, int fd)
 {
-    printf(
+    lprintf(fd,
         "encoded:       0x%08x\n"
         "instr:         I_%s\n"
         "instr-type:    T_%s\n",
@@ -627,14 +691,14 @@ void darm_dump(const darm_t *d)
         darm_enctype_name(d->instr_type));
 
     if(d->cond == C_UNCOND) {
-        printf("cond:          unconditional\n");
+        lprintf(fd, "cond:          unconditional\n");
     }
     else if(d->cond != C_INVLD) {
-        printf("cond:          C_%s\n", darm_condition_name(d->cond, 0));
+        lprintf(fd, "cond:          C_%s\n", darm_condition_name(d->cond, 0));
     }
 
 #define PRINT_REG(reg) if(d->reg != R_INVLD) \
-    printf("%-5s          %s\n", #reg ":", darm_register_name(d->reg))
+    lprintf(fd, "%-5s          %s\n", #reg ":", darm_register_name(d->reg))
 
     PRINT_REG(Rd);
     PRINT_REG(Rn);
@@ -646,11 +710,11 @@ void darm_dump(const darm_t *d)
     PRINT_REG(RdLo);
 
     if(d->I == B_SET) {
-        printf("imm:           0x%08x  %d\n", d->imm, d->imm);
+        lprintf(fd, "imm:           0x%08x  %d\n", d->imm, d->imm);
     }
 
 #define PRINT_FLAG(flag, comment, comment2) if(d->flag != B_INVLD) \
-    printf("%s:             %d   (%s)\n", #flag, d->flag, \
+    lprintf(fd, "%s:             %d   (%s)\n", #flag, d->flag, \
         d->flag == B_SET ? comment : comment2)
 
     PRINT_FLAG(B, "swap one byte", "swap four bytes");
@@ -671,22 +735,22 @@ void darm_dump(const darm_t *d)
     PRINT_FLAG(I, "immediate present", "no immediate present");
 
     if(d->option != O_INVLD) {
-        printf("option:        %d\n", d->option);
+        lprintf(fd, "option:        %d\n", d->option);
     }
 
     if(d->rotate != 0) {
-        printf("rotate:        %d\n", d->rotate);
+        lprintf(fd, "rotate:        %d\n", d->rotate);
     }
 
     if(d->shift_type != S_INVLD) {
         if(d->Rs == R_INVLD) {
-            printf(
+            lprintf(fd,
                 "type:          %s (shift type)\n"
                 "shift:         %-2d  (shift constant)\n",
                 darm_shift_type_name(d->shift_type), d->shift);
         }
         else {
-            printf(
+            lprintf(fd,
                 "type:          %s (shift type)\n"
                 "Rs:            %s  (register-shift)\n",
                 darm_shift_type_name(d->shift_type),
@@ -695,7 +759,7 @@ void darm_dump(const darm_t *d)
     }
 
     if(d->lsb != 0 || d->width != 0) {
-        printf(
+        lprintf(fd,
             "lsb:           %d\n"
             "width:         %d\n",
             d->lsb, d->width);
@@ -704,20 +768,20 @@ void darm_dump(const darm_t *d)
     if(d->reglist != 0) {
         char reglist[64];
         darm_reglist(d->reglist, reglist);
-        printf("reglist:       %s\n", reglist);
+        lprintf(fd, "reglist:       %s\n", reglist);
     }
     if (d->sat_imm != 0) {
-        printf("sat_imm:           0x%08x  %d\n", d->sat_imm, d->sat_imm);
+        lprintf(fd, "sat_imm:           0x%08x  %d\n", d->sat_imm, d->sat_imm);
     }
 
     if(d->opc1 != 0 || d->opc2 != 0 || d->coproc != 0) {
-        printf("opc1:          %d\n", d->opc1);
-        printf("opc2:          %d\n", d->opc2);
-        printf("coproc:        %d\n", d->coproc);
+        lprintf(fd, "opc1:          %d\n", d->opc1);
+        lprintf(fd, "opc2:          %d\n", d->opc2);
+        lprintf(fd, "coproc:        %d\n", d->coproc);
     }
     PRINT_REG(CRn);
     PRINT_REG(CRm);
     PRINT_REG(CRd);
 
-    printf("\n");
+    lprintf(fd, "\n");
 }

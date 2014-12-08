@@ -1,6 +1,8 @@
 AR = ar
 CC = gcc
 CFLAGS = -std=c99 -Wall -O2 -Wextra -Wno-missing-field-initializers
+CFLAGS+= -g -fno-omit-frame-pointer
+#CFLAGS+=-mtune=cortex-a9
 
 # on non-windows, add -fPIC
 ifneq ($(OS),Windows_NT)
@@ -16,7 +18,7 @@ endif
 
 # on non-macosx, add -s
 ifneq ($(shell uname),Darwin)
-	CFLAGS += -s
+#	CFLAGS += -s
 endif
 
 SRC = $(wildcard *.c)

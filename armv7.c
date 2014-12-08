@@ -100,7 +100,9 @@ int darm_immshift_decode(const darm_t *d, const char **type,
     return 0;
 }
 
-static int armv7_disas_uncond(darm_t *d, uint32_t w)
+static
+// __attribute__((always_inline))
+int armv7_disas_uncond(darm_t *d, uint32_t w)
 {
     d->instr_type = T_ARM_UNCOND;
 
@@ -198,7 +200,9 @@ static int armv7_disas_uncond(darm_t *d, uint32_t w)
     return -1;
 }
 
-static int armv7_disas_cond(darm_t *d, uint32_t w)
+static
+// __attribute__((always_inline))
+int armv7_disas_cond(darm_t *d, uint32_t w)
 {
     // we first handle some exceptions for MUL, STR, and LDR-like
     // instructions, which don't fit in the regular table (as they interfere
@@ -847,6 +851,8 @@ static int armv7_disas_cond(darm_t *d, uint32_t w)
     return -1;
 }
 
+/* inline */
+// __attribute__((always_inline))
 int darm_armv7_disasm(darm_t *d, uint32_t w)
 {
     int ret;

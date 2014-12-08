@@ -1588,8 +1588,8 @@ int main()
                 flags ? "flags" : "string representation", d.w, ret);
             printf("  %s = %s (%d)\n", str.total, tests[i].s,
                 strcmp(str.total, tests[i].s));
-            darm_dump(&d);
-            darm_dump(&tests[i].d);
+            darm_dump(&d, stdout);
+            darm_dump(&tests[i].d, stdout);
 
             failure = 1;
         }
